@@ -1,29 +1,70 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import 'react-native-reanimated';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { SplashScreen, Stack } from "expo-router";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { useColorScheme } from '@/hooks/useColorScheme';
+// Splash Screen otomatik kapanmasını engelle
+SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
-
-  if (!loaded) {
-    // Async font loading only occurs in development.
+const getToken = async () => {
+  try {
+    return await AsyncStorage.getItem("authToken");
+  } catch (error) {
+    console.error("Token alınamadı", error);
     return null;
+  }
+};
+
+export default function AppLayout() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [isAuthChecked, setIsAuthChecked] = useState(false);
+
+  useEffect(() => {
+    async function checkAuthStatus() {
+      try {
+        const token = await getToken();
+        setLoggedIn(!!token); // token varsa true, yoksa false
+      } catch (e) {
+        console.error("Token kontrol hatası:", e);
+        setLoggedIn(false);
+      } finally {
+        setIsAuthChecked(true);
+        SplashScreen.hideAsync();
+      }
+    }
+    checkAuthStatus();
+  }, []);
+
+  if (!isAuthChecked) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#FFD700" />
+      </View>
+    );
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </ThemeProvider>
+    <Stack screenOptions={{ headerShown: false }}>
+      {loggedIn ? (
+        <>
+          <Stack.Screen name="home" />
+          {/* Giriş yapılmış diğer sayfalar */}
+        </>
+      ) : (
+        <>
+          <Stack.Screen name="index" />
+          {/* Giriş yapılmamış diğer sayfalar */}
+        </>
+      )}
+    </Stack>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#000",
+  },
+});
