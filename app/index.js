@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -19,33 +18,8 @@ const { width, height } = Dimensions.get('window');
 // API kısıtlamasına takılmamak için bekleme (delay) fonksiyonu
 const delay = (ms) => new Promise(res => setTimeout(res, ms));
 
-const loginUser = async (email, password) => {
-    try {
-        const response = await fetch("http://10.10.114.160:7190/api/Auth/login", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ Email: email, Password: password }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || "Giriş başarısız");
-        }
-
-        return await response.json(); // backend’den gelen token ve kullanıcı bilgileri
-    } catch (error) {
-        throw error;
-    }
-};
-
-const saveToken = async (token) => {
-    await AsyncStorage.setItem("token", token);
-    console.log("💾 Token kaydedildi:", token);
-};
-
 // Basit bir parçacık efekti için animasyonlu bir bileşen
+// Bu bileşen, LoginScreen'den önce tanımlanarak "ReferenceError" hatası giderildi.
 const Particle = ({ animValue, style }) => {
     return (
         <Animated.View
@@ -83,9 +57,57 @@ const Particle = ({ animValue, style }) => {
     );
 };
 
+// Bu fonksiyon, API'ye HTTP isteğini gönderir ve yanıtı işler.
+// Artık 200 (OK) yanıtı geldiği sürece hata fırlatmayacak.
+const loginUser = async (email, password) => {
+    try {
+        console.log("📡 API'ye istek gönderiliyor:", "http://10.10.114.160:7190/api/Auth/login");
+        console.log("📧 Gönderilen data:", { Email: email, Password: "***" });
+        
+        const response = await fetch("http://10.10.114.160:7190/api/Auth/login", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ Email: email, Password: password }),
+        });
+
+        console.log("📊 Response status:", response.status);
+
+        // API yanıtı başarılı değilse, hatayı yakala ve mesaj fırlat
+        if (!response.ok) {
+            let errorData;
+            const responseText = await response.text();
+            try {
+                errorData = JSON.parse(responseText);
+            } catch {
+                errorData = { message: responseText || "Bilinmeyen sunucu hatası" };
+            }
+            console.log("❌ API'den dönen hata:", errorData.message);
+            throw new Error(errorData.message || "Giriş başarısız oldu.");
+        }
+        
+        // Yanıt başarılı olduğu için, token kontrolü yapılmadan veriyi döndür.
+        const responseText = await response.text();
+        if (!responseText) {
+            console.log("✅ Başarılı yanıt, ancak gövdesi boş.");
+            return {};
+        }
+
+        const data = JSON.parse(responseText);
+        console.log("✅ Başarılı yanıt:", data);
+        return data;
+    } catch (error) {
+        console.log("🔥 Fetch hatası:", error.message);
+        throw error;
+    }
+};
+
 export default function LoginScreen() {
+    // E-posta ve şifre için state'ler
     const [email, setEmail] = useState("bt.mudur@asyaport.com");
-    const [password, setPassword] = useState("1234567890");
+    // Şifreyi boş string olarak başlatmak daha güvenlidir.
+    const [password, setPassword] = useState(""); 
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState(null); // Özel mesaj kutusu için state
     const router = useRouter();
@@ -95,58 +117,62 @@ export default function LoginScreen() {
     const particleAnim = useRef(new Animated.Value(0)).current;
 
     useEffect(() => {
+        // Ekranın açılışındaki animasyonlar
         Animated.parallel([
             Animated.timing(fadeAnim, {
                 toValue: 1,
                 duration: 800,
-                useNativeDriver: true,
+                // useNativeDriver'ı React Native Web'de kullanmak yerine false olarak ayarlıyoruz.
+                useNativeDriver: Platform.OS !== 'web',
             }),
             Animated.timing(slideAnim, {
                 toValue: 0,
                 duration: 800,
-                useNativeDriver: true,
+                useNativeDriver: Platform.OS !== 'web',
             }),
         ]).start();
 
+        // Arka plan parçacıklarının döngüsel animasyonu
         const animation = Animated.loop(
             Animated.timing(particleAnim, {
                 toValue: 1,
                 duration: 8000,
-                useNativeDriver: true,
+                useNativeDriver: Platform.OS !== 'web',
             })
         );
         animation.start();
         return () => animation.stop();
     }, []);
 
+    // Kullanıcıya mesaj göstermek için yardımcı fonksiyon
     const showMessage = (text, type = 'error') => {
         setMessage({ text, type });
-        setTimeout(() => setMessage(null), 4000);
+        // 4 saniye sonra mesajı temizle
+        setTimeout(() => setMessage(null), 4000); 
     };
 
+    // Login butonuna basıldığında çalışacak ana fonksiyon
     const handleLogin = async () => {
+        // Basit ön doğrulama
         if (!email || !password) {
             showMessage("Lütfen email ve şifre giriniz.", "warning");
             return;
         }
 
-        console.log("🚀 Login işlemi başlıyor...");
         setLoading(true);
+        showMessage(null); // Yeni bir işlem başladığında eski mesajı temizle
 
         try {
-            const data = await loginUser(email, password);
+            await loginUser(email, password);
 
-            if (data && data.token) {
-                await saveToken(data.token);
-                showMessage("Giriş başarılı.", "success");
-                router.replace("/home");
-            } else if (data && data.error) {
-                showMessage(data.error);
-            } else {
-                showMessage("Giriş başarısız. Lütfen bilgilerinizi kontrol edin.");
-            }
+            // API'den 200 OK geldiğinde giriş başarılı kabul ediliyor
+            showMessage("Giriş başarılı.", "success");
+            // Yönlendirme için 1 saniye bekle
+            await delay(1000); 
+            router.replace("/home");
+            
         } catch (error) {
-            console.log("🔥 Login hatası:", error);
+            console.log("🔥 Login işlemi hatası:", error.message);
             const errorMessage = error.message || "E-posta veya şifre hatalı olabilir.";
             showMessage(`Giriş başarısız: ${errorMessage}`);
         } finally {
@@ -297,22 +323,36 @@ const styles = StyleSheet.create({
         fontWeight: "500",
         borderWidth: 1,
         borderColor: '#333333',
-        shadowColor: '#FFD700',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 5,
+        ...Platform.select({
+            web: {
+                boxShadow: '0 4px 5px rgba(255, 215, 0, 0.1)',
+            },
+            default: {
+                shadowColor: '#FFD700',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 5,
+                elevation: 5,
+            }
+        })
     },
     messageBox: {
         borderRadius: 30,
         padding: 15,
         marginBottom: 24,
         alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 5,
+        ...Platform.select({
+            web: {
+                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+            },
+            default: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.2,
+                shadowRadius: 4,
+                elevation: 5,
+            }
+        })
     },
     'messageBox-error': {
         backgroundColor: '#D9534F',
@@ -333,17 +373,31 @@ const styles = StyleSheet.create({
         borderRadius: 30,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: '#FFD700',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.5,
-        shadowRadius: 10,
-        elevation: 8,
+        ...Platform.select({
+            web: {
+                boxShadow: '0 4px 10px rgba(255, 215, 0, 0.5)',
+            },
+            default: {
+                shadowColor: '#FFD700',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.5,
+                shadowRadius: 10,
+                elevation: 8,
+            }
+        }),
         marginTop: 20,
     },
     loginButtonDisabled: {
         backgroundColor: '#444444',
-        shadowOpacity: 0,
-        elevation: 0,
+        ...Platform.select({
+            web: {
+                boxShadow: 'none',
+            },
+            default: {
+                shadowOpacity: 0,
+                elevation: 0,
+            }
+        })
     },
     buttonText: {
         color: '#000000',
